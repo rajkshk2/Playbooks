@@ -1,0 +1,177 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_playbook_ztapp_dev_quarantine_app_vm_name": {
+            "defaultValue": "playbook-ztapp-dev-quarantine-app-vm",
+            "type": "String"
+        },
+        "connections_azuresentinel_ztapp_dev_soar_externalid": {
+            "defaultValue": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Web/connections/azuresentinel-ztapp-dev-soar",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_playbook_ztapp_dev_quarantine_app_vm_name')]",
+            "location": "eastus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Quarantine_App_VM_For_10_Minutes": {
+                            "actions": {
+                                "Deny_HTTP_From_Firewall": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "PUT",
+                                        "body": {
+                                            "properties": {
+                                                "destinationPortRange": "80",
+                                                "description": "Temporary SOAR quarantine: deny HTTP to app VM from Azure Firewall.",
+                                                "sourceAddressPrefix": "10.0.0.0/26",
+                                                "direction": "Inbound",
+                                                "destinationAddressPrefix": "*",
+                                                "sourcePortRange": "*",
+                                                "access": "Deny",
+                                                "priority": 102,
+                                                "protocol": "Tcp"
+                                            }
+                                        },
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://management.azure.com/"
+                                        },
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/QuarantineDenyHttp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Remove_HTTP_Quarantine": {
+                                    "runAfter": {
+                                        "Wait_10_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "DELETE",
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://management.azure.com/"
+                                        },
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/QuarantineDenyHttp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Deny_SSH_From_Firewall": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "PUT",
+                                        "body": {
+                                            "properties": {
+                                                "destinationPortRange": "22",
+                                                "description": "Temporary SOAR quarantine: deny SSH to app VM from Azure Firewall.",
+                                                "sourceAddressPrefix": "10.0.0.0/26",
+                                                "direction": "Inbound",
+                                                "destinationAddressPrefix": "*",
+                                                "sourcePortRange": "*",
+                                                "access": "Deny",
+                                                "priority": 103,
+                                                "protocol": "Tcp"
+                                            }
+                                        },
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://management.azure.com/"
+                                        },
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/QuarantineDenySsh?api-version=2023-11-01"
+                                    }
+                                },
+                                "Remove_SSH_Quarantine": {
+                                    "runAfter": {
+                                        "Wait_10_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "DELETE",
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://management.azure.com/"
+                                        },
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/QuarantineDenySsh?api-version=2023-11-01"
+                                    }
+                                },
+                                "Wait_10_Minutes": {
+                                    "runAfter": {
+                                        "Deny_HTTP_From_Firewall": [
+                                            "Succeeded"
+                                        ],
+                                        "Deny_SSH_From_Firewall": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Wait",
+                                    "inputs": {
+                                        "interval": {
+                                            "count": 10,
+                                            "unit": "Minute"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {},
+                            "type": "Scope"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionName": "azuresentinel-ztapp-dev-soar",
+                                "connectionId": "[parameters('connections_azuresentinel_ztapp_dev_soar_externalid')]",
+                                "id": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

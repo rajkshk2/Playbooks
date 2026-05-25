@@ -1,0 +1,206 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_playbook_ztapp_dev_block_bruteforce_ip_name": {
+            "defaultValue": "playbook-ztapp-dev-block-bruteforce-ip",
+            "type": "String"
+        },
+        "connections_azuresentinel_ztapp_dev_soar_externalid": {
+            "defaultValue": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Web/connections/azuresentinel-ztapp-dev-soar",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_playbook_ztapp_dev_block_bruteforce_ip_name')]",
+            "location": "eastus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Block_SourceIP_For_10_Minutes": {
+                            "actions": {
+                                "Block_App_NSG_Source_IP": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                            "properties": {
+                                                "access": "Deny",
+                                                "description": "Temporary SOAR block for Sentinel SSH brute-force incident.",
+                                                "destinationAddressPrefix": "*",
+                                                "destinationPortRange": "22",
+                                                "direction": "Inbound",
+                                                "priority": 101,
+                                                "protocol": "Tcp",
+                                                "sourceAddressPrefix": "@{variables('SourceIP')}",
+                                                "sourcePortRange": "*"
+                                            }
+                                        },
+                                        "method": "PUT",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/BlockBruteForceIp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Block_Data_NSG_Source_IP": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                            "properties": {
+                                                "access": "Deny",
+                                                "description": "Temporary SOAR block for Sentinel SSH brute-force incident.",
+                                                "destinationAddressPrefix": "*",
+                                                "destinationPortRange": "22",
+                                                "direction": "Inbound",
+                                                "priority": 101,
+                                                "protocol": "Tcp",
+                                                "sourceAddressPrefix": "@{variables('SourceIP')}",
+                                                "sourcePortRange": "*"
+                                            }
+                                        },
+                                        "method": "PUT",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-data/securityRules/BlockBruteForceIp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Remove_App_NSG_Source_IP_Block": {
+                                    "runAfter": {
+                                        "Wait_10_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "method": "DELETE",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-app/securityRules/BlockBruteForceIp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Remove_Data_NSG_Source_IP_Block": {
+                                    "runAfter": {
+                                        "Wait_10_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "method": "DELETE",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Network/networkSecurityGroups/nsg-ztapp-dev-data/securityRules/BlockBruteForceIp?api-version=2023-11-01"
+                                    }
+                                },
+                                "Wait_10_Minutes": {
+                                    "runAfter": {
+                                        "Block_App_NSG_Source_IP": [
+                                            "Succeeded"
+                                        ],
+                                        "Block_Data_NSG_Source_IP": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Wait",
+                                    "inputs": {
+                                        "interval": {
+                                            "count": 10,
+                                            "unit": "Minute"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_SourceIP": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "not": {
+                                            "equals": [
+                                                "@variables('SourceIP')",
+                                                ""
+                                            ]
+                                        }
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        },
+                        "Initialize_SourceIP": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "SourceIP",
+                                        "type": "string",
+                                        "value": "@{first(json(triggerBody()?['object']?['properties']?['alerts']?[0]?['properties']?['additionalData']?['Custom Details'])?['SourceIP'])}"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[parameters('connections_azuresentinel_ztapp_dev_soar_externalid')]",
+                                "connectionName": "azuresentinel-ztapp-dev-soar",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

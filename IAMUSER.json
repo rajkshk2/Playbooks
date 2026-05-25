@@ -1,0 +1,118 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_playbook_ztapp_dev_disable_suspicious_portal_user_name": {
+            "defaultValue": "playbook-ztapp-dev-disable-suspicious-portal-user",
+            "type": "String"
+        },
+        "connections_azuresentinel_ztapp_dev_soar_externalid": {
+            "defaultValue": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Web/connections/azuresentinel-ztapp-dev-soar",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_playbook_ztapp_dev_disable_suspicious_portal_user_name')]",
+            "location": "eastus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Initialize_UserPrincipalName": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "UserPrincipalName",
+                                        "value": "@{first(json(triggerBody()?['object']?['properties']?['alerts']?[0]?['properties']?['additionalData']?['Custom Details'])?['UserPrincipalName'])}",
+                                        "type": "string"
+                                    }
+                                ]
+                            }
+                        },
+                        "If_User_Is_Not_Protected": {
+                            "actions": {
+                                "Disable_User_In_Entra_ID": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "method": "PATCH",
+                                        "body": {
+                                            "accountEnabled": false
+                                        },
+                                        "authentication": {
+                                            "type": "ManagedServiceIdentity",
+                                            "audience": "https://graph.microsoft.com"
+                                        },
+                                        "headers": {
+                                            "Content-Type": "application/json"
+                                        },
+                                        "uri": "https://graph.microsoft.com/v1.0/users/@{variables('UserPrincipalName')}"
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_UserPrincipalName": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {}
+                            },
+                            "expression": "@and(not(equals(toLower(variables('UserPrincipalName')), 'rahul@sales.rajeev.info')), not(equals(variables('UserPrincipalName'), '')))",
+                            "type": "If"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionName": "azuresentinel-ztapp-dev-soar",
+                                "connectionId": "[parameters('connections_azuresentinel_ztapp_dev_soar_externalid')]",
+                                "id": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,342 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_playbook_ztapp_dev_block_dvwa_sqli_ip_5min_name": {
+            "defaultValue": "playbook-ztapp-dev-block-dvwa-sqli-ip-5min",
+            "type": "String"
+        },
+        "connections_azuresentinel_ztapp_dev_soar_externalid": {
+            "defaultValue": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/rg-ztapp-dev/providers/Microsoft.Web/connections/azuresentinel-ztapp-dev-soar",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_playbook_ztapp_dev_block_dvwa_sqli_ip_5min_name')]",
+            "location": "eastus",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "Microsoft_Sentinel_incident": {
+                            "type": "ApiConnectionWebhook",
+                            "inputs": {
+                                "body": {
+                                    "callback_url": "@{listCallbackUrl()}"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['azuresentinel']['connectionId']"
+                                    }
+                                },
+                                "path": "/incident-creation"
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Initialize_SourceIP": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "SourceIP",
+                                        "type": "string",
+                                        "value": "@{first(json(triggerBody()?['object']?['properties']?['alerts']?[0]?['properties']?['additionalData']?['Custom Details'])?['SourceIP'])}"
+                                    }
+                                ]
+                            }
+                        },
+                        "Temporarily_Block_DVWA_Source": {
+                            "actions": {
+                                "Block_DVWA_DNAT_Source_For_5_Minutes": {
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                            "properties": {
+                                                "priority": 100,
+                                                "ruleCollections": [
+                                                    {
+                                                        "action": {
+                                                            "type": "Dnat"
+                                                        },
+                                                        "name": "DNAT",
+                                                        "priority": 200,
+                                                        "ruleCollectionType": "FirewallPolicyNatRuleCollection",
+                                                        "rules": [
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "2222"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "DNATSSH",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "22"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "2223"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "TempSSH",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.2.1.4",
+                                                                "translatedPort": "22"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "8080"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "WEBAPP",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "80"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "9090"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "DVWA9090",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "255.255.255.255/32"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "9090"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "method": "PUT",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/RG-ZTAPP-DEV/providers/Microsoft.Network/firewallPolicies/fwpol-ztapp-dev/ruleCollectionGroups/DefaultDnatRuleCollectionGroup?api-version=2023-11-01"
+                                    }
+                                },
+                                "Restore_DVWA_DNAT_Source": {
+                                    "runAfter": {
+                                        "Wait_5_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Http",
+                                    "inputs": {
+                                        "authentication": {
+                                            "audience": "https://management.azure.com/",
+                                            "type": "ManagedServiceIdentity"
+                                        },
+                                        "body": {
+                                            "properties": {
+                                                "priority": 100,
+                                                "ruleCollections": [
+                                                    {
+                                                        "action": {
+                                                            "type": "Dnat"
+                                                        },
+                                                        "name": "DNAT",
+                                                        "priority": 200,
+                                                        "ruleCollectionType": "FirewallPolicyNatRuleCollection",
+                                                        "rules": [
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "2222"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "DNATSSH",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "22"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "2223"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "TempSSH",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.2.1.4",
+                                                                "translatedPort": "22"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "8080"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "WEBAPP",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "*"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "80"
+                                                            },
+                                                            {
+                                                                "destinationAddresses": [
+                                                                    "20.42.46.75"
+                                                                ],
+                                                                "destinationPorts": [
+                                                                    "9090"
+                                                                ],
+                                                                "ipProtocols": [
+                                                                    "TCP"
+                                                                ],
+                                                                "name": "DVWA9090",
+                                                                "ruleType": "NatRule",
+                                                                "sourceAddresses": [
+                                                                    "103.79.168.62/32"
+                                                                ],
+                                                                "sourceIpGroups": [],
+                                                                "translatedAddress": "10.1.1.4",
+                                                                "translatedPort": "9090"
+                                                            }
+                                                        ]
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "method": "PUT",
+                                        "uri": "https://management.azure.com/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/resourceGroups/RG-ZTAPP-DEV/providers/Microsoft.Network/firewallPolicies/fwpol-ztapp-dev/ruleCollectionGroups/DefaultDnatRuleCollectionGroup?api-version=2023-11-01"
+                                    }
+                                },
+                                "Wait_5_Minutes": {
+                                    "runAfter": {
+                                        "Block_DVWA_DNAT_Source_For_5_Minutes": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "Wait",
+                                    "inputs": {
+                                        "interval": {
+                                            "count": 5,
+                                            "unit": "Minute"
+                                        }
+                                    }
+                                }
+                            },
+                            "runAfter": {
+                                "Initialize_SourceIP": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "else": {
+                                "actions": {
+                                    "Skip_Block_Not_Approved_Source": {
+                                        "type": "Compose",
+                                        "inputs": "SourceIP was @{variables('SourceIP')}; no firewall change made because this lab playbook only auto-blocks 103.79.168.62."
+                                    }
+                                }
+                            },
+                            "expression": {
+                                "and": [
+                                    {
+                                        "equals": [
+                                            "@variables('SourceIP')",
+                                            "103.79.168.62"
+                                        ]
+                                    }
+                                ]
+                            },
+                            "type": "If"
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "azuresentinel": {
+                                "connectionId": "[parameters('connections_azuresentinel_ztapp_dev_soar_externalid')]",
+                                "connectionName": "azuresentinel-ztapp-dev-soar",
+                                "connectionProperties": {
+                                    "authentication": {
+                                        "type": "ManagedServiceIdentity"
+                                    }
+                                },
+                                "id": "/subscriptions/8749e10d-4e15-430d-ac4f-b4e257737bc2/providers/Microsoft.Web/locations/eastus/managedApis/azuresentinel"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
